@@ -1,7 +1,7 @@
 ---
 title: "Purcell Project Markdown"
-author: "Dan Hudson"
-date: "07/August/2020"
+author: "Dan Hudson and Xochitl Morgan"
+date: "20/August/2020"
 output: pdf_document
 ---
 
@@ -114,7 +114,7 @@ rarefaction_curve_data <- calculate_rarefaction_curves(psdata, c('Observed'),
                                                        rep(c(1, 100, 1:150 * 1000),
                                                            each = 10))
 summary(rarefaction_curve_data)
-saveRDS(rarefaction_curve_data, file = "Final_results/rare_object.rds")
+saveRDS(rarefaction_curve_data, file = "Purcell Final/PrimaryData/rare_object.rds")
 ```
 
 ```{r 3}
@@ -122,7 +122,7 @@ saveRDS(rarefaction_curve_data, file = "Final_results/rare_object.rds")
 psdata <- ps
 
 # Load Rarefaction Curve Data Object
-rarefaction_curve_data <- readRDS(file = "Purcell Final/Final_results/rare_object.rds")
+rarefaction_curve_data <- readRDS(file = "Purcell Final/PrimaryData/rare_object.rds")
 summary(rarefaction_curve_data)
 
 # Summarise alpha diversity
@@ -158,7 +158,7 @@ ggplot(df_mod, aes(x = Depth,
   geom_line(size = 0.8) +
   labs(x = "Tested sequencing depth", y = "Observed Mean", color = "Sample Type")
 
-ggsave("Purcell Final/Final_results/1)Rarefaction_Curve.pdf", width = 11, height = 8)
+ggsave("Purcell Final/Results/1)Rarefaction_Curve.pdf", width = 11, height = 8)
 ```
 
 
@@ -233,7 +233,7 @@ p + geom_boxplot() + geom_point() + xlab("Sample Type") +
   stat_pvalue_manual(pAdjusted) +
   stat_compare_means(method = "anova", label.y = 3)
 
-ggsave("Purcell Final/Final_results/2)Alpha_Diversity.pdf", width = 7, height = 4.5)
+ggsave("Purcell Final/Results/2)Alpha_Diversity.pdf", width = 7, height = 4.5)
 ```
 
 
@@ -288,7 +288,7 @@ ggplot(cust, aes(x = NMDS1, y = NMDS2)) +
   ggtitle("Bray-Curtis Ordination") + labs(color = "Sample Type") +
   theme(aspect.ratio = 1)
 
-ggsave("Purcell Final/Final_results/3)Beta_Diversity.pdf", width = 6, height = 4.5)
+ggsave("Purcell Final/Results/3)Beta_Diversity.pdf", width = 6, height = 4.5)
 ```
 
 
@@ -404,7 +404,7 @@ t3_class <- stool_melt %>%
 
 ggarrange(t1_class, t2_class, t3_class, nrow = 3, labels = "AUTO", legend = "right")
 
-ggsave("Purcell Final/Final_results/4)Relative_Abundance.pdf", width = 7, height = 8)
+ggsave("Purcell Final/Results/4)Relative_Abundance.pdf", width = 7, height = 8)
 ```
 
 
@@ -462,46 +462,12 @@ resCTS_sig$Comparison <- "Clinician Taken Swab vs Stool"
 resSTS_sig$Comparison <- "Self Taken Swab vs Stool"
 
 SignificantResults <- rbind(resCTST_sig, resCTS_sig, resSTS_sig)
-write.csv(SignificantResults, file = "Purcell Final/Final_results/SignificantFoldChangeResults.csv")
-```
-
-
-# Differential Abundance Figure  
-```{r 9}
-ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), fill= Phylum)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.5) + 
-  labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
-  theme(aspect.ratio = 1) +
-  scale_fill_brewer(palette = "Set1")
-ggsave("Purcell Final/Final_results/5)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
-
-clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
-                                      y = reorder(Genus, log2FoldChange),
-                                      fill= Phylum)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
-  labs(title = "Clinician Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
-  scale_fill_brewer(palette = "Set1") + 
-  theme(axis.text.y = element_text(size = 8),
-        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
-clinVSstool
-
-selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
-                                      y = reorder(Genus, log2FoldChange),
-                                      fill= Phylum)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
-  labs(title = "Self Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
-  scale_fill_brewer(palette = "Set1") + 
-  theme(axis.text.y = element_text(size = 8),
-        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
-selfVSstool
-
-ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
-ggsave("Purcell Final/Final_results/5)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+write.csv(SignificantResults, file = "Purcell Final/Results/SignificantFoldChangeResults.csv")
 ```
 
 
 # Differential Abundance - ggplot Heatmap  
-```{r 10}
+```{r 9}
 diffCTST <- resCTST_sig %>%
   select(log2FoldChange, Phylum, Genus)
 colnames(diffCTST)[1] <- "CTST_log2FoldChange"
@@ -573,16 +539,16 @@ heatPhylum <- ggplot(ftp, aes(SamplingComparison, Genus, fill = Phylum)) + geom_
         plot.margin = margin(t = 16.5, r = 5, b = 11, l = 0, unit = "pt"),
         legend.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt"),
         legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line")) +
-  scale_fill_brewer(palette = "Set3”, guide = guide_legend(ncol = 3))
+  scale_fill_brewer(palette = "Set3", guide = guide_legend(ncol = 3))
 
 heatChanges <- ggarrange(heatPhylum, heatLog, widths = c(1, 2))
 heatChanges
 
-ggsave("Purcell Final/Final_results/6)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
+ggsave("Purcell Final/Results/5)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
 ```
 
 # Species Abundance ggplot Heatmap   
-```{r 11}
+```{r 10}
 # Make figure with individual abundance to go next to heatmap
 heat_ps <- subset_taxa(ps_rare, Genus %in% heat$sigGenus)
 heat_ps <- heat_ps %>% 
@@ -639,7 +605,7 @@ heatSt <- ggplot(melted_stool, aes(Individual, Genus, fill = log10Abundance)) + 
         axis.text = element_blank(), legend.position = "bottom", legend.background = element_blank(),
         plot.margin = margin(t = 1, r = 0, b = 0, l = 0, unit = "pt"),
         legend.margin = margin(t = 11, r = 0, b = 0, l = 0, unit = "pt")) +
-  scale_gradient(low = "white", high = "red") + 
+  scale_fill_gradient(low = "white", high = "red") + 
   guides(fill = guide_colourbar(title.position = "bottom", title.hjust = 0.5))
 
 
@@ -647,11 +613,45 @@ heatAbundance <- ggarrange(heatCS, heatSS, heatSt, ncol = 3, common.legend = TRU
 ```
 
 # Combined Heatmaps  
-```{r 12}
+```{r 11}
 ggarrange(heatChanges, heatAbundance, widths = c(2, 1), legend = c("bottom"))
 
-ggsave("Purcell Final/Final_results/7)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
+ggsave("Purcell Final/Results/6)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
 ```
+
+# Supplementary Differential Abundance Figure  
+```{r 12}
+ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.5) + 
+  labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
+  theme(aspect.ratio = 1) +
+  scale_fill_brewer(palette = "Set1")
+ggsave("Purcell Final/Results/S1)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
+
+clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
+                                      y = reorder(Genus, log2FoldChange),
+                                      fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
+  labs(title = "Clinician Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme(axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
+clinVSstool
+
+selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
+                                      y = reorder(Genus, log2FoldChange),
+                                      fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
+  labs(title = "Self Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme(axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
+selfVSstool
+
+ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
+ggsave("Purcell Final/Results/S1)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+```
+
 
 # Boxplot Sanity Checks  
 ```{r 13}
@@ -683,7 +683,7 @@ ggplot(tcounts, aes(Sample_type, log2FC)) +
        y = "log2FC", 
        title = "Sanity Plots with log2FoldChange Results") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Purcell Final/Final_results/8)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
+ggsave("Purcell Final/Results/S2)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
 
 # Sanity Plots with Abundance
 sanity_ps <- subset_taxa(ps_deseq, taxa_names(ps_deseq) %in% int)
@@ -697,7 +697,7 @@ ggplot(sanity, aes(Sample_type, Abundance)) +
        y = "log Abundance", 
        title = "Sanity Plots with log10 Abundance") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Purcell Final/Final_results/8)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
+ggsave("Purcell Final/Results/S2)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
 ```
 
 
