@@ -29,7 +29,7 @@ theme_set(theme_bw())
 Phyloseq object was generated on the server using serverScript.R, following the running of this script it was downloaded to the local machine and used to make plots  
 ```{r 1}
 # load data
-ps0  <- readRDS("data/ps_notree.rds")
+ps0  <- readRDS("data/phyloObject.rds")
 
 # read metadata
 meta <- read.csv("data/purcell_meta.csv")
