@@ -1,0 +1,61 @@
+Sample_ID,Sample_name,Sample_type,Sex,Age,Individual
+1,1A,Rectal swab CT,M,26,1
+2,2A,Rectal swab CT,M,26,2
+3,3A,Rectal swab CT,M,31,3
+4,4A,Rectal swab CT,M,51,4
+5,5A,Rectal swab CT,M,31,5
+6,6A,Rectal swab CT,M,33,6
+7,7A,Rectal swab CT,F,27,7
+8,8A,Rectal swab CT,M,63,8
+9,9A,Rectal swab CT,F,46,9
+10,10A,Rectal swab CT,F,30,10
+11,11A,Rectal swab CT,M,27,11
+12,12A,Rectal swab CT,F,32,12
+13,13A,Rectal swab CT,F,37,13
+14,14A,Rectal swab CT,F,27,14
+15,15A,Rectal swab CT,M,35,15
+16,16A,Rectal swab CT,F,51,16
+17,17A,Rectal swab CT,M,59,17
+18,18A,Rectal swab CT,F,36,18
+19,19A,Rectal swab CT,M,28,19
+20,20A,Rectal swab CT,M,35,20
+21,1B,Rectal swab ST,M,26,1
+22,2B,Rectal swab ST,M,26,2
+23,3B,Rectal swab ST,M,31,3
+24,4B,Rectal swab ST,M,51,4
+25,5B,Rectal swab ST,M,31,5
+26,6B,Rectal swab ST,M,33,6
+27,7B,Rectal swab ST,F,27,7
+28,8B,Rectal swab ST,M,63,8
+29,9B,Rectal swab ST,F,46,9
+30,10B,Rectal swab ST,F,30,10
+31,11B,Rectal swab ST,M,27,11
+32,12B,Rectal swab ST,F,32,12
+33,13B,Rectal swab ST,F,37,13
+34,14B,Rectal swab ST,F,27,14
+35,15B,Rectal swab ST,M,35,15
+36,16B,Rectal swab ST,F,51,16
+37,17B,Rectal swab ST,M,59,17
+38,18B,Rectal swab ST,F,36,18
+39,19B,Rectal swab ST,M,28,19
+40,20B,Rectal swab ST,M,35,20
+41,1C,Stool,M,26,1
+42,2C,Stool,M,26,2
+43,3C,Stool,M,31,3
+44,4C,Stool,M,51,4
+45,5C,Stool,M,31,5
+46,6C,Stool,M,33,6
+47,7C,Stool,F,27,7
+48,8C,Stool,M,63,8
+49,9C,Stool,F,46,9
+50,10C,Stool,F,30,10
+51,11C,Stool,M,27,11
+52,12C,Stool,F,32,12
+53,13C,Stool,F,37,13
+54,14C,Stool,F,27,14
+55,15C,Stool,M,35,15
+56,16C,Stool,F,51,16
+57,17C,Stool,M,59,17
+58,18C,Stool,F,36,18
+59,19C,Stool,M,28,19
+60,20C,Stool,M,35,20
