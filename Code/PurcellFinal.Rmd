@@ -1,7 +1,7 @@
 ---
 title: "Purcell Project Markdown"
 author: "Dan Hudson and Xochitl Morgan"
-date: "20/August/2020"
+date: "25/September/2020"
 output: pdf_document
 ---
 
@@ -157,7 +157,7 @@ ggplot(df_mod, aes(x = Depth,
   geom_line(size = 0.8) +
   labs(x = "Tested sequencing depth", y = "Observed Mean", color = "Sample Type")
 
-ggsave("Results/1)Rarefaction_Curve.pdf", width = 11, height = 8)
+ggsave("Results/S1)Rarefaction_Curve.pdf", width = 11, height = 8)
 ```
 
 
@@ -232,7 +232,7 @@ p + geom_boxplot() + geom_point() + xlab("Sample Type") +
   stat_pvalue_manual(pAdjusted) +
   stat_compare_means(method = "anova", label.y = 3)
 
-ggsave("Results/2)Alpha_Diversity.pdf", width = 7, height = 4.5)
+ggsave("Results/1)Alpha_Diversity.pdf", width = 7, height = 4.5)
 ```
 
 
@@ -287,7 +287,7 @@ ggplot(cust, aes(x = NMDS1, y = NMDS2)) +
   ggtitle("Bray-Curtis Ordination") + labs(color = "Sample Type") +
   theme(aspect.ratio = 1)
 
-ggsave("Results/3)Beta_Diversity.pdf", width = 6, height = 4.5)
+ggsave("Results/2)Beta_Diversity.pdf", width = 6, height = 4.5)
 ```
 
 
@@ -403,7 +403,7 @@ t3_class <- stool_melt %>%
 
 ggarrange(t1_class, t2_class, t3_class, nrow = 3, labels = "AUTO", legend = "right")
 
-ggsave("Results/4)Relative_Abundance.pdf", width = 7, height = 8)
+ggsave("Results/3)Relative_Abundance.pdf", width = 7, height = 8)
 ```
 
 
@@ -543,7 +543,7 @@ heatPhylum <- ggplot(ftp, aes(SamplingComparison, Genus, fill = Phylum)) + geom_
 heatChanges <- ggarrange(heatPhylum, heatLog, widths = c(1, 2))
 heatChanges
 
-ggsave("Results/5)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
+ggsave("Results/4)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
 ```
 
 # Species Abundance ggplot Heatmap   
@@ -615,17 +615,17 @@ heatAbundance <- ggarrange(heatCS, heatSS, heatSt, ncol = 3, common.legend = TRU
 ```{r 11}
 ggarrange(heatChanges, heatAbundance, widths = c(2, 1), legend = c("bottom"))
 
-ggsave("Results/6)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
+ggsave("Results/4)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
 ```
 
-# Supplementary Differential Abundance Figure  
+# Supplementary 2 - Differential Abundance Figure  
 ```{r 12}
 ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), fill= Phylum)) +
   geom_bar(stat = "identity", position = "identity", width = 0.5) + 
   labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
   theme(aspect.ratio = 1) +
   scale_fill_brewer(palette = "Set1")
-ggsave("Results/S1)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
+ggsave("Results/S2)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
 
 clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
                                       y = reorder(Genus, log2FoldChange),
@@ -648,12 +648,59 @@ selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
 selfVSstool
 
 ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
-ggsave("Results/S1)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+ggsave("Results/S2)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
 ```
 
-
-# Boxplot Sanity Checks  
+# Supplementary 3 - DESeq2 Significance by Abundance
 ```{r 13}
+library(patchwork)
+
+sup_ps <- ps_rare %>% 
+  tax_glom(taxrank = "Genus")
+
+sup_bugs <- as.character(unique(SignificantResults$Genus))
+sup_bugsCTST <- as.character(resCTST_sig$Genus)
+sup_bugsCTS <- as.character(resCTS_sig$Genus)
+sup_bugsSTS <- as.character(resSTS_sig$Genus)
+
+sup_melt <- psmelt(sup_ps)
+sup_melt$Phylum <- as.character(sup_melt$Phylum)
+sup_melt$Genus <- as.character(sup_melt$Genus)
+
+sup_melt$Significant <- ifelse(sup_melt$Genus %in% sup_bugs, "YES", "NO")
+sup_melt$Significant <- factor(sup_melt$Significant, levels = c("YES", "NO"))
+
+sup_melt$CTST <- ifelse(sup_melt$Genus %in% sup_bugsCTST, "YES", "NO")
+sup_melt$CTST <- factor(sup_melt$CTST, levels = c("YES", "NO"))
+
+sup_melt$CTS <- ifelse(sup_melt$Genus %in% sup_bugsCTS, "YES", "NO")
+sup_melt$CTS <- factor(sup_melt$CTS, levels = c("YES", "NO"))
+
+sup_melt$STS <- ifelse(sup_melt$Genus %in% sup_bugsSTS, "YES", "NO")
+sup_melt$STS <- factor(sup_melt$STS, levels = c("YES", "NO"))
+
+sup_CTST <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = CTST)) +
+  geom_col() + labs(subtitle = "Clinician Swab vs Self Swab", fill = "Significant") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.title.x = element_blank(), legend.position = "none")
+
+sup_CTS <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = CTS)) +
+  geom_col() + labs(subtitle = "Clinician Swab vs Stool", fill = "Significant") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = element_blank(), axis.text.y = element_blank(), 
+        legend.position = "none")
+
+sup_STS <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = STS)) +
+  geom_col() + labs(subtitle = "Self Swab vs Stool", fill = "Significant") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), axis.title.x = element_blank(),
+        axis.title.y = element_blank(), axis.text.y = element_blank())
+
+sup_CTST + sup_CTS + sup_STS + plot_layout(ncol = 3)
+ggsave("Results/S3)SignificanceByAbundance.pdf", width = 10, height = 6)
+```
+
+# Supplementary 4 - Boxplot Sanity Checks  
+```{r 14}
 resCTS_sig <- resCTS_sig[order(-resCTS_sig$log2FoldChange),]
 
 int <- row.names(resCTS_sig)[1:12]
@@ -682,7 +729,7 @@ ggplot(tcounts, aes(Sample_type, log2FC)) +
        y = "log2FC", 
        title = "Sanity Plots with log2FoldChange Results") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Results/S2)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
+ggsave("Results/S4)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
 
 # Sanity Plots with Abundance
 sanity_ps <- subset_taxa(ps_deseq, taxa_names(ps_deseq) %in% int)
@@ -696,12 +743,12 @@ ggplot(sanity, aes(Sample_type, Abundance)) +
        y = "log Abundance", 
        title = "Sanity Plots with log10 Abundance") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Results/S2)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
+ggsave("Results/S4)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
 ```
 
 
 # Session Info
-```{r 14}
+```{r 15}
 sessionInfo()
 ```
 
