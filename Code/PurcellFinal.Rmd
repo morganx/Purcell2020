@@ -14,9 +14,7 @@ library(vegan)
 library(dplyr)
 library(phyloseq)
 library(ggplot2)
-library(extrafont)
 library(ggpubr)
-library(tidyr)
 library(scales)
 library(DESeq2)
 
@@ -715,7 +713,7 @@ ASV_labeller <- function(variable,value){
 # Sanity Plots with Fold Change
 tcounts <- t(log2((counts(ds[int, ], normalized = TRUE, replaced = FALSE) + .5))) %>%
   merge(colData(ds), ., by = "row.names") %>%
-  gather(ASV, log2FC, (ncol(.)-length(int) + 1):ncol(.))
+  tidyr::gather(ASV, log2FC, (ncol(.)-length(int) + 1):ncol(.))
  
 tcounts %>% 
   select(Row.names, Sample_type, Individual, ASV, log2FC) %>% 
