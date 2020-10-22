@@ -1,7 +1,7 @@
 ---
 title: "Purcell Project Markdown"
 author: "Dan Hudson and Xochitl Morgan"
-date: "2/October/2020"
+date: "22/October/2020"
 output: pdf_document
 ---
 
@@ -15,7 +15,6 @@ library(dplyr)
 library(phyloseq)
 library(ggplot2)
 library(ggpubr)
-library(scales)
 library(DESeq2)
 
 theme_set(theme_bw())
@@ -26,16 +25,20 @@ theme_set(theme_bw())
 Phyloseq object was generated on the server using serverScript.R, following the running of this script it was downloaded to the local machine and used to make plots  
 ```{r 1}
 # load data
-ps0  <- readRDS("phyloObject.rds")
+ps0  <- readRDS("../PrimaryData/phyloObject.rds")
 
 # read metadata
-meta <- read.csv("purcell_meta.csv")
+meta <- read.csv("../PrimaryData/purcell_meta.csv")
 
-# load metadata into phyloseq object
+# add tree
+tree <- read_tree("../PrimaryData/purcellFastTree_edit.tre")
+
+# load metadata and tree into phyloseq object
 meta <- sample_data(meta)
 meta$Individual <- as.factor(meta$Individual)
 row.names(meta) <- meta$Sample_name
-ps <- merge_phyloseq(ps0, meta)
+ps <- merge_phyloseq(ps0, meta, tree)
+
 
 # unedited phyloseq object
 psOG <- ps
@@ -47,6 +50,7 @@ ps <- merge_phyloseq(ps, dna)
 taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
 ps
 ```
+
 
 # Custom Rarefaction Plot  
 Not run in this Markdown
@@ -111,7 +115,7 @@ rarefaction_curve_data <- calculate_rarefaction_curves(psdata, c('Observed'),
                                                        rep(c(1, 100, 1:150 * 1000),
                                                            each = 10))
 summary(rarefaction_curve_data)
-saveRDS(rarefaction_curve_data, file = "rare_object.rds")
+saveRDS(rarefaction_curve_data, file = "../PrimaryData/rare_object.rds")
 ```
 
 ```{r 3}
@@ -119,7 +123,7 @@ saveRDS(rarefaction_curve_data, file = "rare_object.rds")
 psdata <- ps
 
 # Load Rarefaction Curve Data Object
-rarefaction_curve_data <- readRDS("rare_object.rds")
+rarefaction_curve_data <- readRDS(file = "../PrimaryData/rare_object.rds")
 summary(rarefaction_curve_data)
 
 # Summarise alpha diversity
@@ -155,13 +159,13 @@ ggplot(df_mod, aes(x = Depth,
   geom_line(size = 0.8) +
   labs(x = "Tested sequencing depth", y = "Observed Mean", color = "Sample Type")
 
-ggsave("Results/S1)Rarefaction_Curve.pdf", width = 11, height = 8)
+ggsave("../Results/S1)Rarefaction_Curve.pdf", width = 11, height = 8)
 ```
 
 
 # Rarefy  
 ```{r 4}
-# Rarefy to even sequencing depth, 90% of minimum sample depth
+# Rarefy to even sequencing depth, 90% of minimum sample depth, seed for randomness is 1
 ps_rare <- rarefy_even_depth(ps, rngseed = 1,
                              sample.size = 0.9 * min(sample_sums(ps)),
                              replace = FALSE)
@@ -230,7 +234,7 @@ p + geom_boxplot() + geom_point() + xlab("Sample Type") +
   stat_pvalue_manual(pAdjusted) +
   stat_compare_means(method = "anova", label.y = 3)
 
-ggsave("Results/1)Alpha_Diversity.pdf", width = 7, height = 4.5)
+ggsave("../Results/1)Alpha_Diversity.pdf", width = 7, height = 4.5)
 ```
 
 
@@ -253,43 +257,44 @@ adonis(formula = bray_dist ~ sample_data(ps_rare)$Individual)
 adonis(bray_dist ~ sample_data(ps_rare)$Sample_type*sample_data(ps_rare)$Individual)
 
 anosim(bray_dist, sample_data(ps_rare)$Sample_type)
-anoSamp <- (anosim(bray_dist, sample_data(ps_rare)$Sample_type))
-summary(anoSamp)
-plot(anoSamp)
+BCanoSamp <- (anosim(bray_dist, sample_data(ps_rare)$Sample_type))
+summary(BCanoSamp)
+plot(BCanoSamp)
 anosim(bray_dist, sample_data(ps_rare)$Individual)
-anoInd <- anosim(bray_dist, sample_data(ps_rare)$Individual)
-summary(anoInd)
-plot(anoInd)
+BCanoInd <- anosim(bray_dist, sample_data(ps_rare)$Individual)
+summary(BCanoInd)
+plot(BCanoInd)
 
-ps.disper <- betadisper(bray_dist, sample_data(ps_rare)$Sample_type)
-anova(ps.disper)
-permutest(ps.disper)
-permutest(ps.disper, pairwise = TRUE)
-TukeyHSD(ps.disper)
+BCps.disper <- betadisper(bray_dist, sample_data(ps_rare)$Sample_type)
+anova(BCps.disper)
+permutest(BCps.disper)
+permutest(BCps.disper, pairwise = TRUE)
+TukeyHSD(BCps.disper)
 
 # Beta Dispersion Plots
-Beta.Dispersion <- ps.disper
-plot(Beta.Dispersion)
-plot(Beta.Dispersion, hull = FALSE, ellipse = TRUE)
-boxplot(Beta.Dispersion)
+BCbeta.Dispersion <- BCps.disper
+plot(BCbeta.Dispersion)
+plot(BCbeta.Dispersion, hull = FALSE, ellipse = TRUE)
+boxplot(BCbeta.Dispersion)
 
-# NMDS plot
-cust <- plot_ordination(ps_rare, ord.nmds.bray, justDF = TRUE)
+# Bray-Curtis NMDS plot
+bcdf <- plot_ordination(ps_rare, ord.nmds.bray, justDF = TRUE)
 
-ggplot(cust, aes(x = NMDS1, y = NMDS2)) +
+BC_plot <- ggplot(bcdf, aes(x = NMDS1, y = NMDS2)) +
   geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
   geom_point(aes(color = Sample_type)) +
-  annotate("text", x = -0.085, y = -0.08, label = "Stress =") +
-  annotate("text", x = -0.04, y = -0.08, label = round(ord.nmds.bray$stress, 4)) +
   stat_ellipse(aes(color = Sample_type)) +
+  annotate("text", x = -0.02, y = -0.02, label = "Stress = ") +
+  annotate("text", x = -0.008, y = -0.02, label = round(ord.nmds.bray$stress, 4)) +
   ggtitle("Bray-Curtis Ordination") + labs(color = "Sample Type") +
-  theme(aspect.ratio = 1)
+  theme(aspect.ratio = 1, plot.margin = unit(c(0, 1, 0, 0), "pt"))
 
-ggsave("Results/2)Beta_Diversity.pdf", width = 6, height = 4.5)
+BC_plot
+ggsave("../Results/2A)Beta_Diversity.pdf", width = 6, height = 4.5)
 ```
 
 # Beta Diversity - Weighted UniFrac 
-```{r 7, eval = F, echo = T}
+```{r 7}
 # Ordinate data using Non-metric multidimensional scaling (NMDS) on Weighted Unifrac dissimilarity (distances)
 uni_dist <- phyloseq::distance(ps_rare, method = "wunifrac")
 ord.nmds.uni <- ordinate(ps_rare, "NMDS", "wunifrac")
@@ -303,20 +308,20 @@ stressplot(ord.nmds.uni)
 
 # Stats
 # Test whether the sample types differ significantly from each other using PERMANOVA
-adonis(unifrac.dist ~ sample_data(ps_rare)$Sample_type)
-adonis(formula = unifrac.dist ~ sample_data(ps_rare)$Individual)
-adonis(unifrac.dist ~ sample_data(ps_rare)$Sample_type*sample_data(ps_rare)$Individual)
+adonis(uni_dist ~ sample_data(ps_rare)$Sample_type)
+adonis(formula = uni_dist ~ sample_data(ps_rare)$Individual)
+adonis(uni_dist ~ sample_data(ps_rare)$Sample_type*sample_data(ps_rare)$Individual)
 
-anosim(unifrac.dist, sample_data(ps_rare)$Sample_type)
-UWFanoSamp <- (anosim(unifrac.dist, sample_data(ps_rare)$Sample_type))
+anosim(uni_dist, sample_data(ps_rare)$Sample_type)
+UWFanoSamp <- (anosim(uni_dist, sample_data(ps_rare)$Sample_type))
 summary(UWFanoSamp)
 plot(UWFanoSamp)
-anosim(unifrac.dist, sample_data(ps_rare)$Individual)
-UWFanoInd <- anosim(unifrac.dist, sample_data(ps_rare)$Individual)
+anosim(uni_dist, sample_data(ps_rare)$Individual)
+UWFanoInd <- anosim(uni_dist, sample_data(ps_rare)$Individual)
 summary(UWFanoInd)
 plot(UWFanoInd)
 
-UWFps.disper <- betadisper(unifrac.dist, sample_data(ps_rare)$Sample_type)
+UWFps.disper <- betadisper(uni_dist, sample_data(ps_rare)$Sample_type)
 anova(UWFps.disper)
 permutest(UWFps.disper)
 permutest(UWFps.disper, pairwise = TRUE)
@@ -329,25 +334,27 @@ plot(UWFbeta.Dispersion, hull = FALSE, ellipse = TRUE)
 boxplot(UWFbeta.Dispersion)
 
 # UniFrac NMDS Plot
-wuni <- plot_ordination(ps_rare, Weighted UniFrac, justDF = TRUE)
+wuni <- plot_ordination(ps_rare, ord.nmds.uni, justDF = TRUE)
 
 UWF_plot <- ggplot(wuni, aes(x = NMDS1, y = NMDS2)) +
   geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
   geom_point(aes(color = Sample_type)) +
-  annotate("text", x = -0.085, y = -0.08, label = "Stress =") +
-  annotate("text", x = -0.04, y = -0.08, label = round(ord.nmds.uni$stress, 4)) +
   stat_ellipse(aes(color = Sample_type)) +
+  annotate("text", x = -0.32, y = -0.28, label = "Stress = ") +
+  annotate("text", x = -0.19, y = -0.28, label = round(ord.nmds.uni$stress, 4)) +
   ggtitle("Weighted UniFrac Ordination") + labs(color = "Sample Type") +
-  theme(aspect.ratio = 1)
+  theme(aspect.ratio = 1, plot.margin = unit(c(0, 0, 0, 1), "pt"),
+        axis.title.y = element_blank())
 
 UWF_plot
 ggsave("../Results/2B)Beta_Diversity_wUni.pdf", width = 6, height = 4.5)
 ```
 
-```{r 8}
-ggarrange(BC_plot, UWF_plot)
+```{r 8, eval = F, echo = T}
+ggarrange(BC_plot, UWF_plot, common.legend = TRUE, legend = c("bottom"),
+          align = ("hv"), labels = "AUTO")
 
-ggsave("../Results/2)Beta_Diversity.pdf", width = 10, height = 4.5)
+ggsave("../Results/2)Beta_Diversity.pdf", width = 8.5, height = 4.5)
 ```
 
 # RELATIVE ABUNDANCE - Using Taxonomic Level Class  
@@ -530,7 +537,7 @@ resCTS_sig$Comparison <- "Clinician Taken Swab vs Stool"
 resSTS_sig$Comparison <- "Self Taken Swab vs Stool"
 
 SignificantResults <- rbind(resCTST_sig, resCTS_sig, resSTS_sig)
-write.csv(SignificantResults, file = "Results/SignificantFoldChangeResults.csv")
+write.csv(SignificantResults, file = "../Results/SignificantFoldChangeResults.csv")
 ```
 
 
@@ -612,7 +619,7 @@ heatPhylum <- ggplot(ftp, aes(SamplingComparison, Genus, fill = Phylum)) + geom_
 heatChanges <- ggarrange(heatPhylum, heatLog, widths = c(1, 2))
 heatChanges
 
-ggsave("Results/4)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
+ggsave("../Results/4)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
 ```
 
 # Species Abundance ggplot Heatmap   
@@ -684,7 +691,7 @@ heatAbundance <- ggarrange(heatCS, heatSS, heatSt, ncol = 3, common.legend = TRU
 ```{r 13}
 ggarrange(heatChanges, heatAbundance, widths = c(2, 1), legend = c("bottom"))
 
-ggsave("Results/4)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
+ggsave("../Results/4)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
 ```
 
 # Supplementary 2 - Differential Abundance Figure  
@@ -694,7 +701,7 @@ ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), 
   labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
   theme(aspect.ratio = 1) +
   scale_fill_brewer(palette = "Set1")
-ggsave("Results/S2)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
+ggsave("../Results/S2)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
 
 clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
                                       y = reorder(Genus, log2FoldChange),
@@ -717,7 +724,7 @@ selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
 selfVSstool
 
 ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
-ggsave("Results/S2)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+ggsave("../Results/S2)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
 ```
 
 # Supplementary 3 - DESeq2 Significance by Abundance
@@ -765,8 +772,9 @@ sup_STS <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = STS)) +
         axis.title.y = element_blank(), axis.text.y = element_blank())
 
 sup_CTST + sup_CTS + sup_STS + plot_layout(ncol = 3)
-ggsave("Results/S3)SignificanceByAbundance.pdf", width = 10, height = 6)
+ggsave("../Results/S3)SignificanceByAbundance.pdf", width = 10, height = 6)
 ```
+
 
 # Supplementary 4 - Boxplot Sanity Checks  
 ```{r 16}
@@ -798,7 +806,7 @@ ggplot(tcounts, aes(Sample_type, log2FC)) +
        y = "log2FC", 
        title = "Sanity Plots with log2FoldChange Results") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Results/S4)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
+ggsave("../Results/S4)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
 
 # Sanity Plots with Abundance
 sanity_ps <- subset_taxa(ps_deseq, taxa_names(ps_deseq) %in% int)
@@ -812,7 +820,7 @@ ggplot(sanity, aes(Sample_type, Abundance)) +
        y = "log Abundance", 
        title = "Sanity Plots with log10 Abundance") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("Results/S4)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
+ggsave("../Results/S4)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
 ```
 
 
