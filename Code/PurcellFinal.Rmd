@@ -350,7 +350,7 @@ UWF_plot
 ggsave("../Results/2B)Beta_Diversity_wUni.pdf", width = 6, height = 4.5)
 ```
 
-```{r 8, eval = F, echo = T}
+```{r 8}
 ggarrange(BC_plot, UWF_plot, common.legend = TRUE, legend = c("bottom"),
           align = ("hv"), labels = "AUTO")
 
