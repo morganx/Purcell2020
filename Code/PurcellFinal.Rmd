@@ -694,37 +694,64 @@ ggarrange(heatChanges, heatAbundance, widths = c(2, 1), legend = c("bottom"))
 ggsave("../Results/4)Differential_Abundance_heatmap_extra.pdf",width = 11, height = 8)
 ```
 
-# Supplementary 2 - Differential Abundance Figure  
+# Supplementary 2 - Calculate some stats re deseq2 enrichment
 ```{r 14}
-ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), fill= Phylum)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.5) + 
-  labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
-  theme(aspect.ratio = 1) +
-  scale_fill_brewer(palette = "Set1")
-ggsave("../Results/S2)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
+mytax <- data.frame(tax_table(ps_deseq))
+mytable <- mytax %>%
+  group_by(Phylum) %>%
+  summarize(Phycount = n_distinct(Genus))
+sigdat <- SignificantResults %>%
+  group_by(Comparison, Phylum) %>%
+  summarize(count = n_distinct(Genus))
+mysum <- sum(mytable$Phycount)
+#mytable$PhyRatio = mytable$Phycount /mysum
+mytable$ConditionA = "Clinician Taken Swab vs Stool"
+mytable$ConditionB = "Self Taken Swab vs Stool"
+mytable$ConditionC = "Clinician Taken Swab vs Self Taken Swab"
 
-clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
-                                      y = reorder(Genus, log2FoldChange),
-                                      fill= Phylum)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
-  labs(title = "Clinician Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
-  scale_fill_brewer(palette = "Set3") + 
-  theme(axis.text.y = element_text(size = 8),
-        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
-clinVSstool
+data_long <- gather(mytable, condition, Comparison, ConditionA:ConditionC, factor_key = TRUE)
+joined2 <- sigdat %>%
+  full_join(data_long)
 
-selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
-                                      y = reorder(Genus, log2FoldChange),
-                                      fill= Phylum)) +
-  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
-  labs(title = "Self Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
-  scale_fill_brewer(palette = "Set3") + 
-  theme(axis.text.y = element_text(size = 8),
-        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
-selfVSstool
+joined2<-joined2 %>%
+  mutate_at(c(3), ~replace(., is.na(.), 0))
+joined2$Phycount = joined2$Phycount - joined2$count
 
-ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
-ggsave("../Results/S2)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+dat_long <- joined2 %>%
+    gather("count", "measurement", count, Phycount)
+dat_long$measurement = as.numeric(as.character(dat_long$measurement))
+
+ggplot(dat_long) +
+  geom_col(aes(x = Phylum, y = measurement, fill = count)) +
+  facet_grid(~Comparison) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Total genera") +
+  scale_fill_discrete(name = "Treatment-Affected", labels = c("True", "False"))
+ggsave("../Results/S2)SupFig.pdf")
+
+
+joined2$total = joined2$count + joined2$Phycount
+joined2$condition = gsub("ConditionC", 0.019, joined2$condition)
+joined2$condition = gsub("ConditionB", 0.15, joined2$condition)
+joined2$condition = gsub("ConditionA", 0.195, joined2$condition)
+joined2$condition = as.numeric(as.character(joined2$condition))
+
+f<-NULL;
+for(i in c(1:48))
+{
+#print(joined2$total[i])
+r<-binom.test(joined2$count[i], joined2$total[i], joined2$condition[i])
+#print(r)
+f<-rbind(f, c(r$statistic, r$parameter, r$null.value, r$p.value))
+++i
+}
+colnames(f)[4] = "p.val"
+# Not significant after FDR correction
+p.adjust(f[,4], method = "BH")
+
+joined2[7:10] = f[,1:4]
+colnames(joined2)[7:10] = c("successes", "trials", "pSuccess", "pval")
+joined2$p.adjust = p.adjust(f[,4], method = "BH")
 ```
 
 # Supplementary 3 - DESeq2 Significance by Abundance
@@ -775,9 +802,41 @@ sup_CTST + sup_CTS + sup_STS + plot_layout(ncol = 3)
 ggsave("../Results/S3)SignificanceByAbundance.pdf", width = 10, height = 6)
 ```
 
-
-# Supplementary 4 - Boxplot Sanity Checks  
+Supplementary 4 - Differential Abundance Figure  
 ```{r 16}
+ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.5) + 
+  labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
+  theme(aspect.ratio = 1) +
+  scale_fill_brewer(palette = "Set1")
+ggsave("../Results/S4)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
+
+clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
+                                      y = reorder(Genus, log2FoldChange),
+                                      fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
+  labs(title = "Clinician Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme(axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
+clinVSstool
+
+selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
+                                      y = reorder(Genus, log2FoldChange),
+                                      fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
+  labs(title = "Self Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme(axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
+selfVSstool
+
+ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
+ggsave("../Results/S4)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+```
+
+# Supplementary 5 - Boxplot Sanity Checks  
+```{r 17}
 resCTS_sig <- resCTS_sig[order(-resCTS_sig$log2FoldChange),]
 
 int <- row.names(resCTS_sig)[1:12]
@@ -806,7 +865,7 @@ ggplot(tcounts, aes(Sample_type, log2FC)) +
        y = "log2FC", 
        title = "Sanity Plots with log2FoldChange Results") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("../Results/S4)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
+ggsave("../Results/S5)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
 
 # Sanity Plots with Abundance
 sanity_ps <- subset_taxa(ps_deseq, taxa_names(ps_deseq) %in% int)
@@ -820,13 +879,11 @@ ggplot(sanity, aes(Sample_type, Abundance)) +
        y = "log Abundance", 
        title = "Sanity Plots with log10 Abundance") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggsave("../Results/S4)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
+ggsave("../Results/S5)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
 ```
 
 
 # Session Info
-```{r 17}
+```{r 18}
 sessionInfo()
 ```
-
-
