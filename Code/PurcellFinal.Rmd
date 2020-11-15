@@ -709,7 +709,7 @@ mytable$ConditionA = "Clinician Taken Swab vs Stool"
 mytable$ConditionB = "Self Taken Swab vs Stool"
 mytable$ConditionC = "Clinician Taken Swab vs Self Taken Swab"
 
-data_long <- gather(mytable, condition, Comparison, ConditionA:ConditionC, factor_key = TRUE)
+data_long <- tidyr::gather(mytable, condition, Comparison, ConditionA:ConditionC, factor_key = TRUE)
 joined2 <- sigdat %>%
   full_join(data_long)
 
@@ -718,7 +718,7 @@ joined2<-joined2 %>%
 joined2$Phycount = joined2$Phycount - joined2$count
 
 dat_long <- joined2 %>%
-    gather("count", "measurement", count, Phycount)
+    tidyr::gather("count", "measurement", count, Phycount)
 dat_long$measurement = as.numeric(as.character(dat_long$measurement))
 
 ggplot(dat_long) +
@@ -727,7 +727,7 @@ ggplot(dat_long) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
   ylab("Total genera") +
   scale_fill_discrete(name = "Treatment-Affected", labels = c("True", "False"))
-ggsave("../Results/S2)SupFig.pdf")
+ggsave("../Results/S2)TreatmentAffectedGenera.pdf", width = 10, height = 6)
 
 
 joined2$total = joined2$count + joined2$Phycount
