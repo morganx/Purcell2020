@@ -1,0 +1,1 @@
+FastTree -fastest -nt -gtr ../purcell_fasta_alignment.fasta > purcellFasttree 
