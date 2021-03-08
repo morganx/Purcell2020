@@ -1,7 +1,7 @@
 ---
-title: "Purcell Project Markdown"
+title: "Fecal Sampling Comparison Project Markdown"
 author: "Dan Hudson and Xochitl Morgan"
-date: "22/October/2020"
+date: "09/March/2020"
 output: pdf_document
 ---
 
