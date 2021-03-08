@@ -18,6 +18,7 @@ library(ggpubr)
 library(DESeq2)
 
 theme_set(theme_bw())
+set.seed(123)
 ```
 
 
@@ -112,8 +113,8 @@ calculate_rarefaction_curves <- function(psdata, measures, depths, parallel = FA
 }
 
 rarefaction_curve_data <- calculate_rarefaction_curves(psdata, c('Observed'),
-                                                       rep(c(1, 100, 1:150 * 1000),
-                                                           each = 10))
+                                                       rep(c(1, 100, 1:100 * 1000),
+                                                           each = 100))
 summary(rarefaction_curve_data)
 saveRDS(rarefaction_curve_data, file = "../PrimaryData/rare_object.rds")
 ```
@@ -148,7 +149,7 @@ df_mod <- summarySE(rarefaction_curve_data_summary_verbose,
                    measurevar = "Alpha_diversity_mean",
                    groupvars = c("Depth", "Sample_type"))
 df_mod <- df_mod %>% 
-  subset(Depth == 1 | Depth == 1000 | Depth == 10000 | Depth == 20000 | Depth == 30000 | Depth == 40000 | Depth == 50000 | Depth == 60000 | Depth == 70000 | Depth == 80000 | Depth == 90000 | Depth == 100000 | Depth == 110000 | Depth == 120000 | Depth == 130000 | Depth == 140000 | Depth == 150000)
+  subset(Depth == 1 | Depth == 1000 | Depth == 10000 | Depth == 20000 | Depth == 30000 | Depth == 40000 | Depth == 50000 | Depth == 60000 | Depth == 70000 | Depth == 80000 | Depth == 90000 | Depth == 100000)
 
 ggplot(df_mod, aes(x = Depth,
                    y = Alpha_diversity_mean,
@@ -228,7 +229,7 @@ p <- plot_richness(ps_rare, x = "Sample_type",
 # Add boxplot, individual data points, and linked lines using geom layers
 p$layers <- p$layers[-1]
 p + geom_boxplot() + geom_point() + xlab("Sample Type") +
-  geom_line(aes(group = Individual), size = 0.3, linetype = "dashed") +
+  geom_line(aes(group = Individual, colour = Individual), size = 0.3, linetype = "dashed") +
   theme(axis.text.x = element_text(angle = 315, hjust = 0),
         aspect.ratio = 1, legend.position = "none") + 
   stat_pvalue_manual(pAdjusted) +
@@ -282,10 +283,10 @@ bcdf <- plot_ordination(ps_rare, ord.nmds.bray, justDF = TRUE)
 
 BC_plot <- ggplot(bcdf, aes(x = NMDS1, y = NMDS2)) +
   geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
-  geom_point(aes(color = Sample_type)) +
+  geom_point(aes(color = Sample_type), alpha = 0.75) +
   stat_ellipse(aes(color = Sample_type)) +
-  annotate("text", x = -0.02, y = -0.02, label = "Stress = ") +
-  annotate("text", x = -0.008, y = -0.02, label = round(ord.nmds.bray$stress, 4)) +
+  annotate("text", x = -0.02, y = -0.023, label = "Stress = ") +
+  annotate("text", x = -0.008, y = -0.023, label = round(ord.nmds.bray$stress, 4)) +
   ggtitle("Bray-Curtis Ordination") + labs(color = "Sample Type") +
   theme(aspect.ratio = 1, plot.margin = unit(c(0, 1, 0, 0), "pt"))
 
@@ -338,10 +339,10 @@ wuni <- plot_ordination(ps_rare, ord.nmds.uni, justDF = TRUE)
 
 UWF_plot <- ggplot(wuni, aes(x = NMDS1, y = NMDS2)) +
   geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
-  geom_point(aes(color = Sample_type)) +
+  geom_point(aes(color = Sample_type), alpha = 0.75) +
   stat_ellipse(aes(color = Sample_type)) +
-  annotate("text", x = -0.32, y = -0.28, label = "Stress = ") +
-  annotate("text", x = -0.19, y = -0.28, label = round(ord.nmds.uni$stress, 4)) +
+  annotate("text", x = -0.30, y = -0.27, label = "Stress = ") +
+  annotate("text", x = -0.17, y = -0.27, label = round(ord.nmds.uni$stress, 4)) +
   ggtitle("Weighted UniFrac Ordination") + labs(color = "Sample Type") +
   theme(aspect.ratio = 1, plot.margin = unit(c(0, 0, 0, 1), "pt"),
         axis.title.y = element_blank())
