@@ -1,0 +1,980 @@
+---
+title: "Fecal Sampling Comparison Project Markdown"
+author: "Dan Hudson and Xochitl Morgan"
+output: pdf_document
+---
+
+
+```{r setup, message = FALSE, warning = FALSE}
+library(RColorBrewer)
+library(Rmisc)
+library(vegan)
+library(dplyr)
+library(phyloseq)
+library(ggplot2)
+library(ggpubr)
+library(DESeq2)
+
+theme_set(theme_bw())
+set.seed(123)
+```
+
+
+# Load phyloseq object  
+Phyloseq object was generated on the server using serverScript.R, following the running of this script it was downloaded to the local machine and used to make plots
+```{r 1}
+# load data
+ps0  <- readRDS("../PrimaryData/phyloObject.rds")
+
+# read metadata
+meta <- read.csv("../PrimaryData/purcell_meta.csv")
+
+# add tree
+tree <- read_tree("../PrimaryData/purcellFastTree_edit.tre")
+
+# load metadata and tree into phyloseq object
+meta <- sample_data(meta)
+meta$Individual <- as.factor(meta$Individual)
+row.names(meta) <- meta$Sample_name
+ps <- merge_phyloseq(ps0, meta, tree)
+
+
+# unedited phyloseq object
+psOG <- ps
+
+# Assign DNA sequences to refseq slot and replace with simple names to improve readability
+dna <- Biostrings::DNAStringSet(taxa_names(ps))
+names(dna) <- taxa_names(ps)
+ps <- merge_phyloseq(ps, dna)
+taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
+ps
+```
+
+
+# Custom Rarefaction Plot  
+Not run in this Markdown
+```{r 2, eval = FALSE, echo = TRUE}
+# Data
+psdata <- ps
+
+# Loading required library and displaying core configuration
+library(doParallel)
+detectCores(all.tests = TRUE)
+
+# Setting up and registering the cluster
+cl <- makeCluster(detectCores(all.tests = TRUE)-1)
+registerDoParallel(cl)
+
+# Calculate alpha diversity
+calculate_rarefaction_curves <- function(psdata, measures, depths, parallel = FALSE) {
+  require(plyr) # ldply
+  require(reshape2) # melt
+  require(doParallel)
+  
+  # set parallel options if required
+  if (parallel) {
+    paropts <- list(.packages = c("phyloseq", "reshape2"))
+  } else {
+    paropts <- NULL
+  }
+  
+  estimate_rarified_richness <- function(psdata, measures, depth) {
+    if(max(sample_sums(psdata)) < depth) return()
+    psdata <- prune_samples(sample_sums(psdata) >= depth, psdata)
+    
+    rarified_psdata <- rarefy_even_depth(psdata, depth, verbose = FALSE)
+    
+    alpha_diversity <- estimate_richness(rarified_psdata, measures = measures)
+    
+    # as.matrix forces the use of melt.array, which includes the Sample names (rownames)
+    molten_alpha_diversity <- melt(as.matrix(alpha_diversity),
+                                   varnames = c('Sample', 'Measure'),
+                                   value.name = 'Alpha_diversity')
+    
+    molten_alpha_diversity
+  }
+  
+  names(depths) <- depths # this enables automatic addition of the Depth to the output by ldply
+  rarefaction_curve_data <- ldply(depths,
+                                  estimate_rarified_richness,
+                                  psdata = psdata,
+                                  measures = measures,
+                                  .id = 'Depth',
+                                  .progress = ifelse(interactive() && ! parallel, 'text', 'none'),
+                                  .parallel = parallel,
+                                  .paropts = paropts)
+  
+  # convert Depth from factor to numeric
+  rarefaction_curve_data$Depth <- as.numeric(levels(rarefaction_curve_data$Depth))[rarefaction_curve_data$Depth]
+  
+  rarefaction_curve_data
+}
+
+rarefaction_curve_data <- calculate_rarefaction_curves(psdata, c('Observed'),
+                                                       rep(c(1, 100, 1:100 * 1000),
+                                                           each = 100))
+summary(rarefaction_curve_data)
+saveRDS(rarefaction_curve_data, file = "../PrimaryData/rare_object.rds")
+```
+
+
+```{r 3}
+# Data
+psdata <- ps
+
+# Load Rarefaction Curve Data Object
+rarefaction_curve_data <-
+  readRDS(file = "../PrimaryData/rare_object.rds")
+summary(rarefaction_curve_data)
+
+# Summarise alpha diversity
+rarefaction_curve_data_summary <-
+  ddply(rarefaction_curve_data,
+        c('Depth', 'Sample', 'Measure'),
+        summarise,
+        Alpha_diversity_mean = mean(Alpha_diversity),
+        Alpha_diversity_sd = sd(Alpha_diversity))
+
+colnames(rarefaction_curve_data_summary) <-
+  gsub("X","", colnames(rarefaction_curve_data_summary))
+rarefaction_curve_data_summary$Sample <-
+  gsub("X","", rarefaction_curve_data_summary$Sample)
+
+# Add sample data
+rarefaction_curve_data_summary_verbose <-
+  merge(rarefaction_curve_data_summary,
+        data.frame(sample_data(psdata)),
+        by.x = 'Sample',
+        by.y = 'row.names')
+
+# Produce summary df of rarefaction data
+df_mod <- summarySE(rarefaction_curve_data_summary_verbose,
+                   measurevar = "Alpha_diversity_mean",
+                   groupvars = c("Depth", "Sample_type"))
+df_mod <- df_mod %>% 
+  subset(Depth == 1 | Depth == 1000 | Depth == 10000 | Depth == 20000 |
+           Depth == 30000 | Depth == 40000 | Depth == 50000 | Depth == 60000 |
+           Depth == 70000 | Depth == 80000 | Depth == 90000 | Depth == 100000)
+
+ggplot(df_mod, aes(x = Depth,
+                   y = Alpha_diversity_mean,
+                   ymin = Alpha_diversity_mean - ci,
+                   ymax = Alpha_diversity_mean + ci,
+                   colour = Sample_type)) +
+  geom_errorbar(size = 0.5, width = 2500, alpha = 0.6) +
+  geom_line(size = 0.8) +
+  labs(x = "Tested sequencing depth",
+       y = "Observed Mean", color = "Sample Type")
+
+ggsave("../Results/S1)Rarefaction_Curve.pdf", width = 11, height = 8)
+```
+
+
+# Rarefy  
+```{r 4}
+# Rarefy to even sequencing depth, 90% of minimum sample depth, seed for randomness is 1
+ps_rare <- rarefy_even_depth(ps, rngseed = 1,
+                             sample.size = 0.9 * min(sample_sums(ps)),
+                             replace = FALSE)
+
+sample_sums(ps)
+sample_sums(ps_rare)
+```
+
+
+# Alpha Diversity  
+```{r 5}
+# Calculate alpha diversity, using Richness and Shannon
+alpha_summary <- estimate_richness(ps_rare, measures = c("Observed", "Shannon"))
+
+# Use Shapiro-Wilk normality test to determine the test to be used
+shapiro.test(alpha_summary$Observed)
+shapiro.test(alpha_summary$Shannon)
+
+
+# Blocking Test
+rO <- alpha_summary$Observed
+rS <- alpha_summary$Shannon
+
+f <- c("Clinician", "Self", "Stool") # treatment levels
+k <- 3 # number of treatment levels
+n <- 20 # number of control blocks
+
+tm <- gl(k, 1, n*k, factor(f)) # matching treatment
+blk <- gl(n, k, k*n) # blocking factor
+
+avO <- aov(rO ~ tm + blk)
+summary(avO)
+
+avS <- aov(rS ~ tm + blk)
+summary(avS)
+
+
+# Test whether the observed number of OTUs differs significantly between samples
+# p adjustment using Benjamini and Hochberg
+pairwise.t.test(alpha_summary$Observed, sample_data(ps_rare)$Sample_type, p.adjust = "BH")
+pairwise.t.test(alpha_summary$Shannon, sample_data(ps_rare)$Sample_type, p.adjust = "BH")
+
+# Make adjusted p value dataframe
+pObs <- pairwise.t.test(alpha_summary$Observed, sample_data(ps_rare)$Sample_type, p.adjust = "BH")
+pSha <- pairwise.t.test(alpha_summary$Shannon, sample_data(ps_rare)$Sample_type, p.adjust = "BH")
+
+variable <- c("Observed", "Observed", "Observed", "Shannon", "Shannon", "Shannon")
+group1 <- c("Rectal swab CT", "Rectal swab ST", "Rectal swab CT",
+            "Rectal swab CT", "Rectal swab ST", "Rectal swab CT")
+group2 <- c("Stool", "Stool", "Rectal swab ST", "Stool", "Stool", "Rectal swab ST")
+pVal <- c(round(pObs$p.value[2,1], 3), round(pObs$p.value[2,2], 3), round(pObs$p.value[1,1], 3),
+       round(pSha$p.value[2,1], 3), round(pSha$p.value[2,2], 3), round(pSha$p.value[1,1], 3))
+y.position <- c(730, 630, 690, 5.4, 5.1, 5.25)
+
+pAdjusted <- bind_cols(variable, group1, group2, pVal, y.position)
+colnames(pAdjusted) <- c("variable", "group1", "group2", "p", "y.position")
+
+# Plot Observed richness, Shannon, and Simpson diversity values
+p <- plot_richness(ps_rare, x = "Sample_type",
+                  measures = c("Observed", "Shannon"))
+
+# Add boxplot, individual data points, and linked lines using geom layers
+p$layers <- p$layers[-1]
+p + geom_boxplot() + geom_point() + xlab("Sample Type") +
+  geom_line(aes(group = Individual, colour = Individual), size = 0.3, linetype = "dashed") +
+  scale_x_discrete(labels=c("Rectal swab CT" = "Clinician Swab",
+                            "Rectal swab ST" = "Self Swab",
+                            "Stool" = "Stool")) +
+  theme(axis.text.x = element_text(angle = 360, hjust = 0.5),
+        aspect.ratio = 1, legend.position = "none") + 
+  stat_pvalue_manual(pAdjusted) +
+  stat_compare_means(method = "anova", label.y = 3)
+
+ggsave("../Results/1)Alpha_Diversity_Colour.pdf", width = 7, height = 4)
+
+
+p + geom_boxplot() + geom_point() + xlab("Sample Type") +
+  geom_line(aes(group = Individual), size = 0.3, linetype = "dashed") +
+  scale_x_discrete(labels=c("Rectal swab CT" = "Clinician Swab",
+                            "Rectal swab ST" = "Self Swab",
+                            "Stool" = "Stool")) +
+  theme(axis.text.x = element_text(angle = 360, hjust = 0.5),
+        aspect.ratio = 1, legend.position = "none") + 
+  stat_pvalue_manual(pAdjusted) +
+  stat_compare_means(method = "anova", label.y = 3)
+
+ggsave("../Results/1)Alpha_Diversity_Plain.pdf", width = 7, height = 4)
+```
+
+
+# Beta Diversity - Bray-Curtis - Using Rarefied Data
+```{r 6 rare}
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+bray_dist <- phyloseq::distance(ps_rare, method = "bray")
+ord.nmds.bray <- ordinate(ps_rare, "NMDS", "bray")
+
+# Call newly created file to get the stress value of the plot
+ord.nmds.bray
+
+# Stress plot 
+stressplot(ord.nmds.bray)
+
+# Stats
+# Test whether the sample types differ significantly from each other using PERMANOVA
+adonis(bray_dist ~ sample_data(ps_rare)$Sample_type)
+adonis(formula = bray_dist ~ sample_data(ps_rare)$Individual)
+adonis(bray_dist ~ sample_data(ps_rare)$Sample_type*sample_data(ps_rare)$Individual)
+
+anosim(bray_dist, sample_data(ps_rare)$Sample_type)
+BCanoSamp <- (anosim(bray_dist, sample_data(ps_rare)$Sample_type))
+summary(BCanoSamp)
+plot(BCanoSamp)
+anosim(bray_dist, sample_data(ps_rare)$Individual)
+BCanoInd <- anosim(bray_dist, sample_data(ps_rare)$Individual)
+summary(BCanoInd)
+plot(BCanoInd)
+
+BCps.disper <- betadisper(bray_dist, sample_data(ps_rare)$Sample_type)
+anova(BCps.disper)
+permutest(BCps.disper)
+permutest(BCps.disper, pairwise = TRUE)
+TukeyHSD(BCps.disper)
+
+# Beta Dispersion Plots
+BCbeta.Dispersion <- BCps.disper
+plot(BCbeta.Dispersion)
+plot(BCbeta.Dispersion, hull = FALSE, ellipse = TRUE)
+boxplot(BCbeta.Dispersion)
+
+# Bray-Curtis NMDS plot
+bcdf <- plot_ordination(ps_rare, ord.nmds.bray, justDF = TRUE)
+bcdf$Sample_type <- gsub("Rectal swab CT", "Clinician Swab", bcdf$Sample_type)
+bcdf$Sample_type <- gsub("Rectal swab ST", "Self Swab", bcdf$Sample_type)
+
+BC_plot <- ggplot(bcdf, aes(x = NMDS1, y = NMDS2)) +
+  geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
+  geom_point(aes(color = Sample_type), alpha = 0.75) +
+  stat_ellipse(aes(color = Sample_type)) +
+  annotate("text", x = -0.02, y = -0.023, label = "Stress = ") +
+  annotate("text", x = -0.008, y = -0.023, label = round(ord.nmds.bray$stress, 4)) +
+  labs(title = "Bray-Curtis Ordination - Rarefied Data", color = "Sample Type") +
+  theme(aspect.ratio = 1, plot.margin = unit(c(0, 1, 0, 0), "pt"))
+
+BC_plot
+ggsave("../Results/2A)Beta_Diversity_BC_rare.pdf", width = 6, height = 4.5)
+```
+
+
+# Beta Diversity - Bray-Curtis - Using Unrarefied Data
+```{r 6 not-rare}
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Bray–Curtis dissimilarity (distances)
+bray_distNR <- phyloseq::distance(ps, method = "bray")
+ord.nmds.brayNR <- ordinate(ps, "NMDS", "bray")
+
+# Call newly created file to get the stress value of the plot
+ord.nmds.brayNR
+
+# Stress plot 
+stressplot(ord.nmds.brayNR)
+
+# Stats
+# Test whether the sample types differ significantly from each other using PERMANOVA
+adonis(bray_distNR ~ sample_data(ps)$Sample_type)
+adonis(formula = bray_distNR ~ sample_data(ps)$Individual)
+adonis(bray_distNR ~ sample_data(ps)$Sample_type*sample_data(ps)$Individual)
+
+anosim(bray_distNR, sample_data(ps)$Sample_type)
+BCanoSampNR <- (anosim(bray_distNR, sample_data(ps)$Sample_type))
+summary(BCanoSampNR)
+plot(BCanoSampNR)
+anosim(bray_distNR, sample_data(ps)$Individual)
+BCanoIndNR <- anosim(bray_distNR, sample_data(ps)$Individual)
+summary(BCanoIndNR)
+plot(BCanoIndNR)
+
+BCps.disperNR <- betadisper(bray_distNR, sample_data(ps)$Sample_type)
+anova(BCps.disperNR)
+permutest(BCps.disperNR)
+permutest(BCps.disperNR, pairwise = TRUE)
+TukeyHSD(BCps.disperNR)
+
+# Beta Dispersion Plots
+BCbeta.DispersionNR <- BCps.disperNR
+plot(BCbeta.DispersionNR)
+plot(BCbeta.DispersionNR, hull = FALSE, ellipse = TRUE)
+boxplot(BCbeta.DispersionNR)
+
+# Bray-Curtis NMDS plot
+bcdfNR <- plot_ordination(ps, ord.nmds.brayNR, justDF = TRUE)
+bcdfNR$Sample_type <- gsub("Rectal swab CT", "Clinician Swab", bcdfNR$Sample_type)
+bcdfNR$Sample_type <- gsub("Rectal swab ST", "Self Swab", bcdfNR$Sample_type)
+
+BC_plotNR <- ggplot(bcdfNR, aes(x = NMDS1, y = NMDS2)) +
+  geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
+  geom_point(aes(color = Sample_type), alpha = 0.75) +
+  stat_ellipse(aes(color = Sample_type)) +
+  annotate("text", x = -0.08, y = -0.085, label = "Stress = ") +
+  annotate("text", x = -0.04, y = -0.085, label = round(ord.nmds.brayNR$stress, 4)) +
+  labs(title = "Bray-Curtis Ordination - Unrarefied Data", color = "Sample Type") +
+  theme(aspect.ratio = 1, plot.margin = unit(c(0, 1, 0, 0), "pt"))
+
+BC_plotNR
+ggsave("../Results/2A)Beta_Diversity_BC_NR.pdf", width = 6, height = 4.5)
+```
+
+
+# Beta Diversity - Weighted UniFrac 
+```{r 7}
+# Ordinate data using Non-metric multidimensional scaling (NMDS) on Weighted Unifrac dissimilarity (distances)
+uni_dist <- phyloseq::distance(ps_rare, method = "wunifrac")
+ord.nmds.uni <- ordinate(ps_rare, "NMDS", "wunifrac")
+
+# Call newly created file to get the stress value of the plot
+ord.nmds.uni
+
+# Stress plot 
+stressplot(ord.nmds.uni)
+
+
+# Stats
+# Test whether the sample types differ significantly from each other using PERMANOVA
+adonis(uni_dist ~ sample_data(ps_rare)$Sample_type)
+adonis(formula = uni_dist ~ sample_data(ps_rare)$Individual)
+adonis(uni_dist ~ sample_data(ps_rare)$Sample_type*sample_data(ps_rare)$Individual)
+
+anosim(uni_dist, sample_data(ps_rare)$Sample_type)
+UWFanoSamp <- (anosim(uni_dist, sample_data(ps_rare)$Sample_type))
+summary(UWFanoSamp)
+plot(UWFanoSamp)
+anosim(uni_dist, sample_data(ps_rare)$Individual)
+UWFanoInd <- anosim(uni_dist, sample_data(ps_rare)$Individual)
+summary(UWFanoInd)
+plot(UWFanoInd)
+
+UWFps.disper <- betadisper(uni_dist, sample_data(ps_rare)$Sample_type)
+anova(UWFps.disper)
+permutest(UWFps.disper)
+permutest(UWFps.disper, pairwise = TRUE)
+TukeyHSD(UWFps.disper)
+
+# Beta Dispersion Plots
+UWFbeta.Dispersion <- UWFps.disper
+plot(UWFbeta.Dispersion)
+plot(UWFbeta.Dispersion, hull = FALSE, ellipse = TRUE)
+boxplot(UWFbeta.Dispersion)
+
+# UniFrac NMDS Plot
+wuni <- plot_ordination(ps_rare, ord.nmds.uni, justDF = TRUE)
+wuni$Sample_type <- gsub("Rectal swab CT", "Clinician Swab", wuni$Sample_type)
+wuni$Sample_type <- gsub("Rectal swab ST", "Self Swab", wuni$Sample_type)
+
+
+UWF_plot <- ggplot(wuni, aes(x = NMDS1, y = NMDS2)) +
+  geom_line(aes(group = Individual), size = 0.2, linetype = "dashed") +
+  geom_point(aes(color = Sample_type), alpha = 0.75) +
+  stat_ellipse(aes(color = Sample_type)) +
+  annotate("text", x = -0.30, y = -0.27, label = "Stress = ") +
+  annotate("text", x = -0.17, y = -0.27, label = round(ord.nmds.uni$stress, 4)) +
+  labs(title = "Weighted UniFrac Ordination", color = "Sample Type") +
+  theme(aspect.ratio = 1, plot.margin = unit(c(0, 0, 0, 1), "pt"),
+        axis.title.y = element_blank())
+
+UWF_plot
+ggsave("../Results/2B)Beta_Diversity_wUni.pdf", width = 6, height = 4.5)
+```
+
+
+```{r 8}
+ggarrange(BC_plot, UWF_plot, common.legend = TRUE, legend = c("bottom"),
+          align = ("hv"), labels = "AUTO")
+
+ggsave("../Results/2)Beta_Diversity.pdf", width = 8.5, height = 4.5)
+```
+
+
+# Relative Abundance - Using Taxonomic Level Class  
+```{r 9}
+# Subset Phyloseq Objects
+ps_class <- subset_taxa(ps_rare, Class != "NA")
+
+sample_clin <- subset_samples(ps_class, Sample_type == "Rectal swab CT")
+sample_self <- subset_samples(ps_class, Sample_type == "Rectal swab ST")
+sample_stool <- subset_samples(ps_class, Sample_type == "Stool")
+
+# Relative Abundance - Clinician Taken Swab
+clin_class <- tax_glom(sample_clin, taxrank = "Class") # agglomerate taxa
+clin_class <- transform_sample_counts(clin_class, function(x) x/sum(x)) #get abundance in %
+clin_melt <- psmelt(clin_class) # create dataframe from phyloseq object
+clin_melt$Class <- as.character(clin_melt$Class) #convert to character
+clin_melt <- clin_melt[order(-clin_melt$Abundance),]
+clin_melt[!clin_melt$Class %in% c(unique(clin_melt$Class)[1:10]), "Class"] <- "Other"
+
+# Relative Abundance - Self Taken Swab
+self_class <- tax_glom(sample_self, taxrank = "Class") # agglomerate taxa
+self_class <- transform_sample_counts(self_class, function(x) x/sum(x)) #get abundance in %
+self_melt <- psmelt(self_class) # create dataframe from phyloseq object
+self_melt$Class <- as.character(self_melt$Class) #convert to character
+self_melt <- self_melt[order(-self_melt$Abundance),]
+self_melt[!self_melt$Class %in% c(unique(self_melt$Class)[1:10]), "Class"] <- "Other"
+
+# Relative Abundance - Stool Sample
+stool_class <- tax_glom(sample_stool, taxrank = "Class") # agglomerate taxa
+stool_class <- transform_sample_counts(stool_class, function(x) x/sum(x)) #get abundance in %
+stool_melt <- psmelt(stool_class) # create dataframe from phyloseq object
+stool_melt$Class <- as.character(stool_melt$Class) #convert to character
+stool_melt <- stool_melt[order(-stool_melt$Abundance),]
+stool_melt[!stool_melt$Class %in% c(unique(stool_melt$Class)[1:10]), "Class"] <- "Other"
+
+
+# Set order of bars and get colours
+sort.clin <- clin_melt %>% 
+  plyr::count("Class", wt = "Abundance") %>%
+  arrange(desc(freq)) %>%
+  pull(Class)
+sort.clin <- sort.clin[!sort.clin %in% "Other"]
+sort.clin <- append("Other", sort.clin)
+
+sort.self <- self_melt %>% 
+  plyr::count("Class", wt = "Abundance") %>%
+  arrange(desc(freq)) %>%
+  pull(Class)
+sort.self <- sort.self[!sort.self %in% "Other"]
+sort.self <- append("Other", sort.self)
+
+sort.stool <- stool_melt %>% 
+  plyr::count("Class", wt = "Abundance") %>%
+  arrange(desc(freq)) %>%
+  pull(Class)
+sort.stool <- sort.stool[!sort.stool %in% "Other"]
+sort.stool <- append("Other", sort.stool)
+
+barOrder <- unique(c(sort.clin, sort.self, sort.stool))
+
+# Get Colours and Assign to Bacteria
+spectralExtra <- colorRampPalette(brewer.pal(11, "Spectral"))(length(barOrder))
+cols <- setNames(c(spectralExtra), c(rev(barOrder)))
+
+# Create Custom Legend
+dummy_df <- data.frame(
+  Class = as.factor(barOrder) ,  
+  value = c(1,2,3,4,5,6,7,8,9,10,11,12,13))
+dummy_df <- mutate(dummy_df, Class = factor(Class, levels = rev(barOrder)))
+
+rel_legend <- get_legend(ggplot(dummy_df, aes(x = Class, y = value)) + 
+    geom_bar(stat = "identity", aes(fill = Class)) +
+    scale_fill_manual(values = cols) +
+    theme(legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line")))
+
+
+# Plot - Relative Abundance - Clinician Taken Swab
+t1_class <- clin_melt %>%
+  mutate(Sample = factor(Sample, levels = c("1A", "2A", "3A", "4A", "5A",
+                                            "6A", "7A", "8A", '9A', "10A",
+                                            "11A", "12A", "13A", "14A", "15A",
+                                            "16A", "17A", "18A", "19A", "20A"))) %>%
+  mutate(Class = factor(Class, levels = rev(barOrder))) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Class)) +
+  geom_bar(stat = "identity", position = "fill") + 
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(text = element_text(size = 7)) +
+  ggtitle("Clinician Swab - Class - Top 10") +
+  ylab("Relative abundance") +
+  scale_fill_manual(values = cols) + theme(legend.position = "none")
+
+# Plot - Relative Abundance - Self Taken Swab
+t2_class <- self_melt %>%
+  mutate(Sample = factor(Sample, levels = c("1B", "2B", "3B", "4B", "5B",
+                                            "6B", "7B", "8B", "9B", "10B",
+                                            "11B", "12B", "13B", "14B", "15B",
+                                            "16B", "17B", "18B", "19B", "20B"))) %>%
+  mutate(Class = factor(Class, levels = rev(barOrder))) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Class)) +
+  geom_bar(stat = "identity", position = "fill") + 
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(text = element_text(size = 7)) +
+  ggtitle("Self Swab - Class - Top 10") +
+  ylab("Relative abundance") +
+  scale_fill_manual(values = cols) + theme(legend.position = "none")
+
+# Plot - Relative Abundance - Stool Sample
+t3_class <- stool_melt %>%
+  mutate(Sample = factor(Sample, levels = c("1C", "2C", "3C", "4C", "5C",
+                                            "6C", "7C", "8C", "9C", "10C",
+                                            "11C", "12C", "13C", "14C", "15C",
+                                            "16C", "17C", "18C", "19C", "20C"))) %>%
+  mutate(Class = factor(Class, levels = rev(barOrder))) %>%
+  ggplot(aes(x = Sample, y = Abundance, fill = Class)) +
+  geom_bar(stat = "identity", position = "fill") + 
+  scale_y_continuous(labels = scales::percent_format()) +
+  theme(text = element_text(size = 7)) +
+  ggtitle("Stool - Class - Top 10") +
+  ylab("Relative abundance") +
+  scale_fill_manual(values = cols) + theme(legend.position = "none")
+
+plots <- ggarrange(t1_class, t2_class, t3_class, nrow = 3, labels = "AUTO")
+ggarrange(plots, legend.grob = rel_legend, legend = "right")
+
+ggsave("../Results/3)Relative_Abundance.pdf", width = 7, height = 8)
+```
+
+
+# OTU differential abundance testing with DESeq2  
+```{r 10}
+ps_deseq <- ps %>% 
+  tax_glom(taxrank = "Genus")
+
+sample_data(ps_deseq)$Sample_type <- gsub(" ", "_", sample_data(ps_deseq)$Sample_type)
+sample_data(ps_deseq)$Sample_type <- as.factor(sample_data(ps_deseq)$Sample_type)
+
+# Convert the phyloseq object to a DESeqDataSet
+ds <- phyloseq_to_deseq2(ps_deseq, ~ Sample_type)
+ds <- DESeq(ds)
+
+# Plot of Dispersion Estimates
+plotDispEsts(ds, ylim = c(1e-8, 1e4))
+
+# Extract the result table from the ds object usind the DESeq2 function results and filter the OTUs using a False Discovery Rate (FDR) cutoff of 0.01
+alpha <- 0.01
+
+# Swab CT vs Swab ST
+resCTST <- results(ds, contrast = c("Sample_type", "Rectal_swab_CT", "Rectal_swab_ST"),
+                   alpha = alpha)
+resCTST <- resCTST[order(resCTST$padj, na.last = NA), ]
+plotMA(resCTST, alpha = 0.01, main = "MA-plot of Clinician vs Self")
+hist(resCTST$pvalue, col = "gray", main = "Wald Model - Clinician vs Self", xlab = "Original p-values")
+resCTST_sig <- resCTST[(resCTST$padj < alpha), ]
+resCTST_sig <- cbind(as(resCTST_sig, "data.frame"), as(tax_table(ps)[rownames(resCTST_sig), ], "matrix"))
+head(resCTST_sig)
+
+# Swab CT vs Stool
+resCTS <- results(ds, contrast = c("Sample_type", "Rectal_swab_CT", "Stool"),
+                  alpha = alpha)
+resCTS <- resCTS[order(resCTS$padj, na.last = NA), ]
+plotMA(resCTS, alpha = 0.01, main = "MA-plot of Clinician vs Stool")
+hist(resCTS$pvalue, col = "gray", main = "Wald Model - Clinician vs Stool", xlab = "Original p-values")
+resCTS_sig <- resCTS[(resCTS$padj < alpha), ]
+resCTS_sig <- cbind(as(resCTS_sig, "data.frame"), as(tax_table(ps)[rownames(resCTS_sig), ], "matrix"))
+head(resCTS_sig)
+
+# Swab ST vs Stool
+resSTS <- results(ds, contrast = c("Sample_type", "Rectal_swab_ST", "Stool"),
+                  alpha = alpha)
+resSTS <- resSTS[order(resSTS$padj, na.last = NA), ]
+plotMA(resSTS, alpha = 0.01, main = "MA-plot of Self vs Stool")
+hist(resSTS$pvalue, col = "gray", main = "Wald Model - Self vs Stool", xlab = "Original p-values")
+resSTS_sig <- resSTS[(resSTS$padj < alpha), ]
+resSTS_sig <- cbind(as(resSTS_sig, "data.frame"), as(tax_table(ps)[rownames(resSTS_sig), ], "matrix"))
+head(resSTS_sig)
+
+# Save .csv of significant fold change results
+resCTST_sig$Comparison <- "Clinician Taken Swab vs Self Taken Swab"
+resCTS_sig$Comparison <- "Clinician Taken Swab vs Stool"
+resSTS_sig$Comparison <- "Self Taken Swab vs Stool"
+
+SignificantResults <- rbind(resCTST_sig, resCTS_sig, resSTS_sig)
+write.csv(SignificantResults, file = "../Results/SignificantFoldChangeResults.csv")
+```
+
+
+# Differential Abundance - ggplot Heatmap  
+```{r 11}
+diffCTST <- resCTST_sig %>%
+  select(log2FoldChange, Phylum, Genus)
+colnames(diffCTST)[1] <- "CTST_log2FoldChange"
+
+diffCTS <- resCTS_sig %>%
+  select(log2FoldChange, Phylum, Genus)
+colnames(diffCTS)[1] <- "CTS_log2FoldChange"
+
+diffSTS <- resSTS_sig %>%
+  select(log2FoldChange, Phylum, Genus)
+colnames(diffSTS)[1] <- "STS_log2FoldChange"
+
+heat <- rbind.fill(as.data.frame(t(diffCTS)), as.data.frame(t(diffSTS)))
+heat <- rbind.fill(as.data.frame(heat), as.data.frame(t(diffCTST)))
+heat <- as.data.frame(t(heat))
+colnames(heat) <- c("CTS", "CTS_phylum", "CTS_genus",
+                    "STS", "STS_phylum", "STS_genus",
+                    "CTST", "CTST_phylum", "CTST_genus")
+
+heat$Phylum <- as.character(heat$CTS_phylum)
+heat$Phylum[nrow(heat)] <- as.character(heat$STS_phylum[nrow(heat)])
+
+heat$Genus <- as.character(heat$CTS_genus)
+heat$Genus[nrow(heat)] <- as.character(heat$STS_genus[nrow(heat)])
+
+# long format needed for ggplot based heat map
+heatLong <- heat %>% 
+  select(Phylum, Genus, CTS, STS, CTST) %>% 
+  tidyr::pivot_longer(heat, cols = CTS:CTST,
+                      names_to = "Contrast", values_to = "log2FC")
+heatLong$log2FC <- as.numeric(as.character(heatLong$log2FC))
+heatLong$Contrast <- factor(heatLong$Contrast, levels = c("CTST", "CTS", "STS"))
+heatLong <- heatLong %>%
+  arrange(Phylum) %>%
+  mutate(Genus = factor(Genus, levels = unique(Genus)))
+  
+heatLog <- ggplot(heatLong, aes(Contrast, Genus, fill = log2FC)) + geom_tile() +
+  geom_text(aes(label = sprintf("%2.1f", log2FC)), size = 2) +
+  labs(fill = "log2 Fold Change") +
+  theme(axis.title = element_blank(), legend.position = "bottom",
+        axis.text.x = element_text(family = "Helvetica", size = 10, face = "plain"), 
+        axis.text.y = element_blank(), plot.background = element_blank(),
+        plot.margin = margin(t = 2, r = 0, b = 0, l = 0, unit = "pt"),
+        legend.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt")) +
+  guides(fill = guide_colourbar(title.position = "bottom", title.hjust = 0.5)) +
+  scale_fill_distiller(palette = "RdBu") +
+  scale_y_discrete(limits = rev) +
+  scale_x_discrete(position = "top", labels = (c("Clinician vs Self",
+                                                 "Clinician vs Stool",
+                                                 "Self vs Stool")))
+
+heatPhylum <- ggplot(heatLong, aes(Contrast, Genus, fill = Phylum)) + geom_tile() +
+  scale_y_discrete(limits = rev) +
+  theme(axis.title = element_blank(), legend.position = "bottom",
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+        plot.margin = margin(t = 16.5, r = 5, b = 11, l = 0, unit = "pt"),
+        legend.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt"),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line")) +
+  scale_fill_brewer(palette = "Dark2", guide = guide_legend(ncol = 3))
+
+heatChanges <- ggarrange(heatPhylum, heatLog, widths = c(1, 2))
+heatChanges
+
+ggsave("../Results/4)Differential_Abundance_heatmap.pdf", width = 8, height = 8)
+```
+
+
+# Genus Abundance ggplot Heatmap   
+```{r 12}
+# Make figure with individual abundance to go next to heat map
+heat_ps <- subset_taxa(ps_rare, Genus %in% heat$Genus)
+heat_ps <- heat_ps %>% 
+  tax_glom(taxrank = "Genus")
+
+# Clinician Swab
+heat_clin <- subset_samples(heat_ps, Sample_type == "Rectal swab CT")
+melted_clin <- psmelt(heat_clin)
+melted_clin <- select(melted_clin, Individual, Genus, Abundance)
+melted_clin$Abundance[melted_clin$Abundance == 0] <- 1
+melted_clin$log2Abundance <- log2(melted_clin$Abundance)
+melted_clin$log10Abundance <- log10(melted_clin$Abundance)
+
+heatCS <- ggplot(melted_clin, aes(Individual, Genus, fill = log10Abundance)) +
+  geom_tile() + scale_x_discrete(position = "top") +
+  labs(x = "Clinician Swab", fill = "log10 Abundance") +
+  theme(axis.title.x = element_text(family = "Helvetica", size = 10, face = "plain"),
+        axis.title.y = element_blank(), axis.text = element_blank(),
+        legend.position = "bottom", legend.background = element_blank(),
+        plot.margin = margin(t = 1, r = 1, b = 0, l = 2, unit = "pt"),
+        legend.margin = margin(t = 11, r = 0, b = 0, l = 0, unit = "pt")) +
+  scale_fill_gradient(low = "white", high = "red") + 
+  guides(fill = guide_colourbar(title.position = "bottom", title.hjust = 0.5))
+
+# Self Swab
+heat_self <- subset_samples(heat_ps, Sample_type == "Rectal swab ST")
+melted_self <- psmelt(heat_self)
+melted_self <- select(melted_self, Individual, Genus, Abundance)
+melted_self$Abundance[melted_self$Abundance == 0] <- 1
+melted_self$log2Abundance <- log2(melted_self$Abundance)
+melted_self$log10Abundance <- log10(melted_self$Abundance)
+
+heatSS <- ggplot(melted_self, aes(Individual, Genus, fill = log10Abundance)) +
+  geom_tile() + scale_x_discrete(position = "top") +
+  labs(x = "Self Swab", fill = "log10 Abundance") +
+  theme(axis.title.x = element_text(family = "Helvetica", size = 10, face = "plain"),
+        axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "bottom", legend.background = element_blank(),
+        plot.margin = margin(t = 1, r = 1, b = 0, l = 1, unit = "pt"),
+        legend.margin = margin(t = 11, r = 0, b = 0, l = 0, unit = "pt")) +
+  scale_fill_gradient(low = "white", high = "red") + 
+  guides(fill = guide_colourbar(title.position = "bottom", title.hjust = 0.5))
+
+# Stool
+heat_stool <- subset_samples(heat_ps, Sample_type == "Stool")
+melted_stool <- psmelt(heat_stool)
+melted_stool <- select(melted_stool, Individual, Genus, Abundance)
+melted_stool$Abundance[melted_stool$Abundance == 0] <- 1
+melted_stool$log2Abundance <- log2(melted_stool$Abundance)
+melted_stool$log10Abundance <- log10(melted_stool$Abundance)
+
+heatSt <- ggplot(melted_stool, aes(Individual, Genus, fill = log10Abundance)) +
+  geom_tile() + scale_x_discrete(position = "top") +
+  labs(x = "Stool", fill = "log10 Abundance") +
+  theme(axis.title.x = element_text(family = "Helvetica", size = 10, face = "plain"),
+        axis.title.y = element_blank(), axis.ticks.y = element_blank(),
+        axis.text = element_blank(),
+        legend.position = "bottom", legend.background = element_blank(),
+        plot.margin = margin(t = 1, r = 1, b = 0, l = 1, unit = "pt"),
+        legend.margin = margin(t = 11, r = 0, b = 0, l = 0, unit = "pt")) +
+  scale_fill_gradient(low = "white", high = "red") + 
+  guides(fill = guide_colourbar(title.position = "bottom", title.hjust = 0.5))
+
+
+heatAbundance <- ggarrange(heatCS, heatSS, heatSt, ncol = 3,
+                           common.legend = TRUE, legend = c("bottom"))
+```
+
+# Combined Heatmaps  
+```{r 13}
+ggarrange(heatChanges, heatAbundance, widths = c(2, 1), legend = c("bottom"))
+
+ggsave("../Results/4)Differential_Abundance_heatmap_extra.pdf",
+       width = 11, height = 8)
+```
+
+
+# Supplementary 2 - Calculate some stats for deseq2 enrichment
+```{r 14}
+mytax <- data.frame(tax_table(ps_deseq))
+mytable <- mytax %>%
+  group_by(Phylum) %>%
+  summarize(Phycount = n_distinct(Genus))
+sigdat <- SignificantResults %>%
+  group_by(Comparison, Phylum) %>%
+  summarize(count = n_distinct(Genus))
+mysum <- sum(mytable$Phycount)
+#mytable$PhyRatio = mytable$Phycount /mysum
+mytable$ConditionA = "Clinician Taken Swab vs Stool"
+mytable$ConditionB = "Self Taken Swab vs Stool"
+mytable$ConditionC = "Clinician Taken Swab vs Self Taken Swab"
+
+data_long <- tidyr::gather(mytable, condition, Comparison, ConditionA:ConditionC, factor_key = TRUE)
+joined2 <- sigdat %>%
+  full_join(data_long)
+
+joined2<-joined2 %>%
+  mutate_at(c(3), ~replace(., is.na(.), 0))
+joined2$Phycount = joined2$Phycount - joined2$count
+
+dat_long <- joined2 %>%
+    tidyr::gather("count", "measurement", count, Phycount)
+dat_long$measurement = as.numeric(as.character(dat_long$measurement))
+
+ggplot(dat_long) +
+  geom_col(aes(x = Phylum, y = measurement, fill = count)) +
+  facet_grid(~Comparison) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Total genera") +
+  scale_fill_discrete(name = "Treatment-Affected", labels = c("True", "False"))
+ggsave("../Results/S2)TreatmentAffectedGenera.pdf", width = 10, height = 6)
+
+
+joined2$total = joined2$count + joined2$Phycount
+joined2$condition = gsub("ConditionC", 0.019, joined2$condition)
+joined2$condition = gsub("ConditionB", 0.15, joined2$condition)
+joined2$condition = gsub("ConditionA", 0.195, joined2$condition)
+joined2$condition = as.numeric(as.character(joined2$condition))
+
+f<-NULL;
+for(i in c(1:48))
+{
+#print(joined2$total[i])
+r<-binom.test(joined2$count[i], joined2$total[i], joined2$condition[i])
+#print(r)
+f<-rbind(f, c(r$statistic, r$parameter, r$null.value, r$p.value))
+++i
+}
+colnames(f)[4] = "p.val"
+# Not significant after FDR correction
+p.adjust(f[,4], method = "BH")
+
+joined2[7:10] = f[,1:4]
+colnames(joined2)[7:10] = c("successes", "trials", "pSuccess", "pval")
+joined2$p.adjust = p.adjust(f[,4], method = "BH")
+```
+
+
+# Supplementary 3 - DESeq2 Significance by Abundance
+```{r 15}
+library(patchwork)
+
+sup_ps <- ps_rare %>% 
+  tax_glom(taxrank = "Genus")
+
+sup_bugs <- as.character(unique(SignificantResults$Genus))
+sup_bugsCTST <- as.character(resCTST_sig$Genus)
+sup_bugsCTS <- as.character(resCTS_sig$Genus)
+sup_bugsSTS <- as.character(resSTS_sig$Genus)
+
+sup_melt <- psmelt(sup_ps)
+sup_melt$Phylum <- as.character(sup_melt$Phylum)
+sup_melt$Genus <- as.character(sup_melt$Genus)
+
+sup_melt$Significant <- ifelse(sup_melt$Genus %in% sup_bugs, "YES", "NO")
+sup_melt$Significant <- factor(sup_melt$Significant, levels = c("YES", "NO"))
+
+sup_melt$CTST <- ifelse(sup_melt$Genus %in% sup_bugsCTST, "YES", "NO")
+sup_melt$CTST <- factor(sup_melt$CTST, levels = c("YES", "NO"))
+
+sup_melt$CTS <- ifelse(sup_melt$Genus %in% sup_bugsCTS, "YES", "NO")
+sup_melt$CTS <- factor(sup_melt$CTS, levels = c("YES", "NO"))
+
+sup_melt$STS <- ifelse(sup_melt$Genus %in% sup_bugsSTS, "YES", "NO")
+sup_melt$STS <- factor(sup_melt$STS, levels = c("YES", "NO"))
+
+sup_CTST <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = CTST)) +
+  geom_col() + labs(subtitle = "Clinician Swab vs Self Swab", fill = "Significant") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.title.x = element_blank(), legend.position = "none")
+
+sup_CTS <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = CTS)) +
+  geom_col() + labs(subtitle = "Clinician Swab vs Stool", fill = "Significant") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = element_blank(), axis.text.y = element_blank(), 
+        legend.position = "none")
+
+sup_STS <- ggplot(sup_melt, aes(x = Phylum, y = Abundance, fill = STS)) +
+  geom_col() + labs(subtitle = "Self Swab vs Stool", fill = "Significant") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), axis.title.x = element_blank(),
+        axis.title.y = element_blank(), axis.text.y = element_blank())
+
+sup_CTST + sup_CTS + sup_STS + plot_layout(ncol = 3)
+ggsave("../Results/S3)SignificanceByAbundance.pdf", width = 10, height = 6)
+```
+
+
+Supplementary 4 - Differential Abundance Figure  
+```{r 16}
+ggplot(resCTST_sig, aes(x = log2FoldChange, y = reorder(Genus, log2FoldChange), fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.5) + 
+  labs(title = "Clinician Swab vs Self Swab", y = "Genus", x = "log2 Fold Change") + 
+  theme(aspect.ratio = 1) +
+  scale_fill_brewer(palette = "Set1")
+ggsave("../Results/S4)Differential_Abundance_clinVSself.pdf", width = 7, height = 4)
+
+clinVSstool <- ggplot(resCTS_sig, aes(x = log2FoldChange,
+                                      y = reorder(Genus, log2FoldChange),
+                                      fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
+  labs(title = "Clinician Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme(axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
+clinVSstool
+
+selfVSstool <- ggplot(resSTS_sig, aes(x = log2FoldChange,
+                                      y = reorder(Genus, log2FoldChange),
+                                      fill= Phylum)) +
+  geom_bar(stat = "identity", position = "identity", width = 0.7) + 
+  labs(title = "Self Swab vs Stool", y = "Genus", x = "log2 Fold Change") + 
+  scale_fill_brewer(palette = "Set3") + 
+  theme(axis.text.y = element_text(size = 8),
+        legend.text = element_text(size = 8), legend.key.size = unit(0.75, "line"))
+selfVSstool
+
+ggarrange(clinVSstool, selfVSstool, ncol = 2, common.legend = TRUE, legend = "right", labels = "AUTO")
+ggsave("../Results/S4)Differential_Abundance_swabsVSstool.pdf", width = 12, height = 8)
+```
+
+
+# Supplementary 5 - Boxplot Sanity Checks  
+```{r 17}
+resCTS_sig <- resCTS_sig[order(-resCTS_sig$log2FoldChange),]
+
+int <- row.names(resCTS_sig)[1:12]
+ASVlabs <- tax_table(ps)[int, 6]
+names(ASVlabs) <- int
+ASVlabs <- as.list(ASVlabs)
+
+ASV_labeller <- function(variable,value){
+  return(ASVlabs[value])
+}
+
+# Sanity Plots with Fold Change
+tcounts <- t(log2((counts(ds[int, ], normalized = TRUE, replaced = FALSE) + .5))) %>%
+  merge(colData(ds), ., by = "row.names") %>%
+  tidyr::gather(ASV, log2FC, (ncol(.)-length(int) + 1):ncol(.))
+ 
+tcounts %>% 
+  select(Row.names, Sample_type, Individual, ASV, log2FC) %>% 
+  head %>% 
+  knitr::kable()
+
+ggplot(tcounts, aes(Sample_type, log2FC)) + 
+  geom_boxplot() + geom_jitter(width = 0.2, height = 0.2, size = 0.4, aes(color = Individual)) +
+  facet_wrap(~ASV, scales = "free_y", labeller = ASV_labeller, nrow = 4) +
+  labs(x = "Sample Type", 
+       y = "log2FC", 
+       title = "Sanity Plots with log2FoldChange Results") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("../Results/S5)Sanity_FoldChange_plots.pdf", width = 7, height = 8)
+
+# Sanity Plots with Abundance
+sanity_ps <- subset_taxa(ps_deseq, taxa_names(ps_deseq) %in% int)
+sanity <- psmelt(sanity_ps)
+
+ggplot(sanity, aes(Sample_type, Abundance)) + 
+  geom_boxplot() + geom_jitter(width = 0.2, height = 0.2, size = 0.4, aes(color = Individual)) +
+  facet_wrap(~Genus, scales = "free_y", nrow = 4) + 
+  scale_y_log10() +
+  labs(x = "Sample Type", 
+       y = "log Abundance", 
+       title = "Sanity Plots with log10 Abundance") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave("../Results/S5)Sanity_logAbundance_plots.pdf", width = 7, height = 8)
+```
+
+
+# Session Info
+```{r 18}
+sessionInfo()
+```
